@@ -12,7 +12,8 @@ import {
   FileText,
   Eye,
   AlertCircle,
-  Loader
+  Loader,
+  MessageCircle
 } from 'lucide-react';
 import { campaignService } from '../services/api';
 import { formatNumber, calculatePercentage } from '../utils/helpers';
@@ -24,6 +25,7 @@ const CampaignsDashboard = () => {
   const [uploadedFile, setUploadedFile] = useState(null);
   const [campaignResults, setCampaignResults] = useState([]);
   const [trackingResults, setTrackingResults] = useState([]);
+  const [whatsappTrackingResults, setWhatsappTrackingResults] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [campaignType, setCampaignType] = useState('email');
   const [error, setError] = useState(null);
@@ -126,6 +128,39 @@ const CampaignsDashboard = () => {
     }
   };
 
+  // Send WhatsApp campaign
+  const sendWhatsAppCampaign = async () => {
+    if (!uploadedFilePath) {
+      setError('Please upload a CSV file first');
+      return;
+    }
+    
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const results = await campaignService.sendWhatsAppCampaign(uploadedFilePath);
+      setCampaignResults(results);
+      
+      // Calculate stats
+      const successful = results.filter(r => r.status === 'success').length;
+      const failed = results.filter(r => r.status === 'error').length;
+      
+      setStats({
+        totalSent: results.length,
+        successful,
+        failed,
+        processing: 0
+      });
+      
+      setActiveTab('results');
+    } catch (error) {
+      setError('Failed to send WhatsApp campaign: ' + (error.response?.data?.error || error.message));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Get tracking information
   const getTrackingInfo = async () => {
     setIsLoading(true);
@@ -142,6 +177,22 @@ const CampaignsDashboard = () => {
     }
   };
 
+  // Get WhatsApp tracking information
+  const getWhatsAppTrackingInfo = async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const results = await campaignService.getWhatsAppTrackingInfo();
+      setWhatsappTrackingResults(results);
+      setActiveTab('whatsapp-tracking');
+    } catch (error) {
+      setError('Failed to get WhatsApp tracking info: ' + (error.response?.data?.error || error.message));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Clear error after a few seconds
   React.useEffect(() => {
     if (error) {
@@ -150,13 +201,26 @@ const CampaignsDashboard = () => {
     }
   }, [error]);
 
+  const getCampaignFunction = () => {
+    switch (campaignType) {
+      case 'email':
+        return sendEmailCampaign;
+      case 'sms':
+        return sendSMSCampaign;
+      case 'whatsapp':
+        return sendWhatsAppCampaign;
+      default:
+        return sendEmailCampaign;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-white mb-2">Campaigns Dashboard</h1>
-          <p className="text-purple-200">Manage your bulk email and SMS campaigns</p>
+          <p className="text-purple-200">Manage your bulk email, SMS, and WhatsApp campaigns</p>
         </div>
 
         {/* Error Alert */}
@@ -208,7 +272,8 @@ const CampaignsDashboard = () => {
             {[
               { id: 'upload', label: 'Upload & Send', icon: Upload },
               { id: 'results', label: 'Campaign Results', icon: BarChart3, badge: campaignResults.length },
-              { id: 'tracking', label: 'Email Tracking', icon: Eye, badge: trackingResults.length }
+              { id: 'tracking', label: 'Email Tracking', icon: Eye, badge: trackingResults.length },
+              { id: 'whatsapp-tracking', label: 'WhatsApp Tracking', icon: MessageCircle, badge: whatsappTrackingResults.length }
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -220,7 +285,7 @@ const CampaignsDashboard = () => {
                 }`}
               >
                 <tab.icon className="h-5 w-5" />
-                <span>{tab.label}</span>
+                <span className="hidden sm:inline">{tab.label}</span>
                 {tab.badge > 0 && (
                   <span className="absolute -top-1 -right-1 bg-purple-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
                     {tab.badge}
@@ -238,7 +303,7 @@ const CampaignsDashboard = () => {
               <h2 className="text-2xl font-bold text-white mb-6">Create New Campaign</h2>
               
               {/* Campaign Type Selection */}
-              <div className="flex space-x-4 mb-8">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
                 <button
                   onClick={() => setCampaignType('email')}
                   className={`flex items-center space-x-3 px-6 py-4 rounded-xl transition-all ${
@@ -267,6 +332,20 @@ const CampaignsDashboard = () => {
                     <div className="text-sm opacity-75">Send messages via SMS</div>
                   </div>
                 </button>
+                <button
+                  onClick={() => setCampaignType('whatsapp')}
+                  className={`flex items-center space-x-3 px-6 py-4 rounded-xl transition-all ${
+                    campaignType === 'whatsapp'
+                      ? 'bg-emerald-500/30 text-white border border-emerald-400 shadow-lg'
+                      : 'bg-white/10 text-purple-200 hover:bg-white/20'
+                  }`}
+                >
+                  <MessageCircle className="h-6 w-6" />
+                  <div className="text-left">
+                    <div className="font-medium">WhatsApp Campaign</div>
+                    <div className="text-sm opacity-75">Send messages via WhatsApp</div>
+                  </div>
+                </button>
               </div>
 
               {/* File Upload */}
@@ -280,7 +359,7 @@ const CampaignsDashboard = () => {
               {uploadedFile && uploadedFilePath && (
                 <div className="flex space-x-4">
                   <button
-                    onClick={campaignType === 'email' ? sendEmailCampaign : sendSMSCampaign}
+                    onClick={getCampaignFunction()}
                     disabled={isLoading}
                     className="flex-1 bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white font-semibold py-4 px-6 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-3"
                   >
@@ -292,21 +371,34 @@ const CampaignsDashboard = () => {
                     ) : (
                       <>
                         <Send className="h-5 w-5" />
-                        <span>Send {campaignType === 'email' ? 'Email' : 'SMS'} Campaign</span>
+                        <span>Send {campaignType.charAt(0).toUpperCase() + campaignType.slice(1)} Campaign</span>
                       </>
                     )}
                   </button>
                   
-                  {campaignType === 'email' && campaignResults.length > 0 && (
-                    <button
-                      onClick={getTrackingInfo}
-                      disabled={isLoading}
-                      className="px-6 py-4 bg-blue-500/30 hover:bg-blue-500/40 text-blue-200 rounded-xl flex items-center space-x-2 disabled:opacity-50"
-                    >
-                      <Eye className="h-5 w-5" />
-                      <span>Get Tracking</span>
-                    </button>
-                  )}
+                  {/* Tracking buttons */}
+                  <div className="flex space-x-2">
+                    {campaignType === 'email' && campaignResults.length > 0 && (
+                      <button
+                        onClick={getTrackingInfo}
+                        disabled={isLoading}
+                        className="px-6 py-4 bg-blue-500/30 hover:bg-blue-500/40 text-blue-200 rounded-xl flex items-center space-x-2 disabled:opacity-50"
+                      >
+                        <Eye className="h-5 w-5" />
+                        <span className="hidden sm:inline">Email Tracking</span>
+                      </button>
+                    )}
+                    {campaignType === 'whatsapp' && campaignResults.length > 0 && (
+                      <button
+                        onClick={getWhatsAppTrackingInfo}
+                        disabled={isLoading}
+                        className="px-6 py-4 bg-emerald-500/30 hover:bg-emerald-500/40 text-emerald-200 rounded-xl flex items-center space-x-2 disabled:opacity-50"
+                      >
+                        <MessageCircle className="h-5 w-5" />
+                        <span className="hidden sm:inline">WhatsApp Tracking</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -321,16 +413,28 @@ const CampaignsDashboard = () => {
                     <span className="text-purple-200 text-sm">
                       {stats.successful} successful, {stats.failed} failed
                     </span>
-                    {campaignType === 'email' && (
-                      <button
-                        onClick={getTrackingInfo}
-                        disabled={isLoading}
-                        className="bg-blue-500/30 hover:bg-blue-500/40 text-blue-200 px-4 py-2 rounded-lg flex items-center space-x-2"
-                      >
-                        <Eye className="h-4 w-4" />
-                        <span>Get Tracking</span>
-                      </button>
-                    )}
+                    <div className="flex space-x-2">
+                      {campaignType === 'email' && (
+                        <button
+                          onClick={getTrackingInfo}
+                          disabled={isLoading}
+                          className="bg-blue-500/30 hover:bg-blue-500/40 text-blue-200 px-4 py-2 rounded-lg flex items-center space-x-2"
+                        >
+                          <Eye className="h-4 w-4" />
+                          <span>Email Tracking</span>
+                        </button>
+                      )}
+                      {campaignType === 'whatsapp' && (
+                        <button
+                          onClick={getWhatsAppTrackingInfo}
+                          disabled={isLoading}
+                          className="bg-emerald-500/30 hover:bg-emerald-500/40 text-emerald-200 px-4 py-2 rounded-lg flex items-center space-x-2"
+                        >
+                          <MessageCircle className="h-4 w-4" />
+                          <span>WhatsApp Tracking</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -363,7 +467,7 @@ const CampaignsDashboard = () => {
                         {campaignResults.map((result, index) => (
                           <tr key={index} className="border-b border-white/10 hover:bg-white/5 transition-colors">
                             <td className="py-4 px-6 text-white font-medium">
-                              {result.to || result.mobile}
+                              {result.to || result.mobile || result.phone}
                             </td>
                             <td className="py-4 px-6">
                               {result.status === 'success' ? (
@@ -379,7 +483,7 @@ const CampaignsDashboard = () => {
                               )}
                             </td>
                             <td className="py-4 px-6 text-purple-200 font-mono text-sm">
-                              {result.message_id || 'N/A'}
+                              {result.message_id || result.wamid || 'N/A'}
                             </td>
                             <td className="py-4 px-6 text-purple-200 text-sm">
                               {result.error ? (
@@ -419,7 +523,7 @@ const CampaignsDashboard = () => {
               {trackingResults.length === 0 ? (
                 <div className="text-center py-16">
                   <Eye className="h-16 w-16 text-purple-400 mx-auto mb-6" />
-                  <h3 className="text-xl font-semibold text-white mb-2">No tracking data available</h3>
+                  <h3 className="text-xl font-semibold text-white mb-2">No email tracking data available</h3>
                   <p className="text-purple-200 mb-6">
                     Send an email campaign first, then click "Get Tracking" to see opens, clicks, and engagement data
                   </p>
@@ -433,7 +537,7 @@ const CampaignsDashboard = () => {
                 </div>
               ) : (
                 <div className="space-y-6">
-                  {/* Tracking Summary */}
+                  {/* Email Tracking Summary */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="backdrop-blur-lg bg-white/10 rounded-xl p-4 border border-white/20">
                       <div className="flex items-center justify-between">
@@ -468,7 +572,7 @@ const CampaignsDashboard = () => {
                     </div>
                   </div>
 
-                  {/* Tracking Table */}
+                  {/* Email Tracking Table */}
                   <div className="backdrop-blur-lg bg-white/5 rounded-xl overflow-hidden">
                     <div className="overflow-x-auto">
                       <table className="w-full">
@@ -521,6 +625,156 @@ const CampaignsDashboard = () => {
               )}
             </div>
           )}
+
+          {activeTab === 'whatsapp-tracking' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-white">WhatsApp Tracking Information</h2>
+                <button
+                  onClick={getWhatsAppTrackingInfo}
+                  disabled={isLoading}
+                  className="bg-emerald-500/30 hover:bg-emerald-500/40 text-emerald-200 px-4 py-2 rounded-lg flex items-center space-x-2 disabled:opacity-50"
+                >
+                  {isLoading ? (
+                    <Loader className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <MessageCircle className="h-4 w-4" />
+                  )}
+                  <span>Refresh Tracking</span>
+                </button>
+              </div>
+
+              {whatsappTrackingResults.length === 0 ? (
+                <div className="text-center py-16">
+                  <MessageCircle className="h-16 w-16 text-purple-400 mx-auto mb-6" />
+                  <h3 className="text-xl font-semibold text-white mb-2">No WhatsApp tracking data available</h3>
+                  <p className="text-purple-200 mb-6">
+                    Send a WhatsApp campaign first, then click "Get Tracking" to see delivery status and read receipts
+                  </p>
+                  <button
+                    onClick={getWhatsAppTrackingInfo}
+                    disabled={isLoading}
+                    className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-3 rounded-xl transition-colors disabled:opacity-50"
+                  >
+                    {isLoading ? 'Loading...' : 'Check for Tracking Data'}
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* WhatsApp Tracking Summary */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="backdrop-blur-lg bg-white/10 rounded-xl p-4 border border-white/20">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-purple-200 text-sm">Total Messages</p>
+                          <p className="text-2xl font-bold text-white">{whatsappTrackingResults.length}</p>
+                        </div>
+                        <MessageCircle className="h-8 w-8 text-purple-400" />
+                      </div>
+                    </div>
+                    <div className="backdrop-blur-lg bg-white/10 rounded-xl p-4 border border-white/20">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-purple-200 text-sm">Delivered</p>
+                          <p className="text-2xl font-bold text-white">
+                            {whatsappTrackingResults.filter(r => r.status === 'delivered' || r.status === 'read').length}
+                          </p>
+                        </div>
+                        <CheckCircle className="h-8 w-8 text-green-400" />
+                      </div>
+                    </div>
+                    <div className="backdrop-blur-lg bg-white/10 rounded-xl p-4 border border-white/20">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-purple-200 text-sm">Read</p>
+                          <p className="text-2xl font-bold text-white">
+                            {whatsappTrackingResults.filter(r => r.status === 'read').length}
+                          </p>
+                        </div>
+                        <Eye className="h-8 w-8 text-blue-400" />
+                      </div>
+                    </div>
+                    <div className="backdrop-blur-lg bg-white/10 rounded-xl p-4 border border-white/20">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-purple-200 text-sm">Failed</p>
+                          <p className="text-2xl font-bold text-white">
+                            {whatsappTrackingResults.filter(r => r.status === 'failed' || r.status === 'undelivered').length}
+                          </p>
+                        </div>
+                        <XCircle className="h-8 w-8 text-red-400" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* WhatsApp Tracking Table */}
+                  <div className="backdrop-blur-lg bg-white/5 rounded-xl overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="bg-white/10">
+                          <tr>
+                            <th className="text-left py-4 px-6 text-purple-200 font-medium">Phone Number</th>
+                            <th className="text-left py-4 px-6 text-purple-200 font-medium">Message ID</th>
+                            <th className="text-center py-4 px-6 text-purple-200 font-medium">Status</th>
+                            <th className="text-left py-4 px-6 text-purple-200 font-medium">Timestamp</th>
+                            <th className="text-left py-4 px-6 text-purple-200 font-medium">Details</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {whatsappTrackingResults.map((result, index) => (
+                            <tr key={index} className="border-b border-white/10 hover:bg-white/5 transition-colors">
+                              <td className="py-4 px-6 text-white font-medium">
+                                {result.phone || result.to}
+                              </td>
+                              <td className="py-4 px-6 text-purple-200 font-mono text-sm">
+                                {result.wamid || result.message_id}
+                              </td>
+                              <td className="py-4 px-6 text-center">
+                                {result.status === 'read' && (
+                                  <span className="flex items-center justify-center text-blue-400 bg-blue-400/20 px-3 py-1 rounded-full text-sm">
+                                    <Eye className="h-4 w-4 mr-2" />
+                                    Read
+                                  </span>
+                                )}
+                                {result.status === 'delivered' && (
+                                  <span className="flex items-center justify-center text-green-400 bg-green-400/20 px-3 py-1 rounded-full text-sm">
+                                    <CheckCircle className="h-4 w-4 mr-2" />
+                                    Delivered
+                                  </span>
+                                )}
+                                {result.status === 'sent' && (
+                                  <span className="flex items-center justify-center text-yellow-400 bg-yellow-400/20 px-3 py-1 rounded-full text-sm">
+                                    <Clock className="h-4 w-4 mr-2" />
+                                    Sent
+                                  </span>
+                                )}
+                                {(result.status === 'failed' || result.status === 'undelivered') && (
+                                  <span className="flex items-center justify-center text-red-400 bg-red-400/20 px-3 py-1 rounded-full text-sm">
+                                    <XCircle className="h-4 w-4 mr-2" />
+                                    Failed
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-4 px-6 text-purple-200 text-sm">
+                                {result.timestamp ? new Date(result.timestamp).toLocaleString() : 'N/A'}
+                              </td>
+                              <td className="py-4 px-6 text-purple-200 text-sm">
+                                {result.error ? (
+                                  <span className="text-red-300">{result.error}</span>
+                                ) : (
+                                  <span className="text-green-300">Message processed</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Loading Overlay */}
@@ -531,8 +785,9 @@ const CampaignsDashboard = () => {
               <p className="text-white text-lg font-medium">Processing your request...</p>
               <p className="text-purple-200 text-sm text-center">
                 {activeTab === 'upload' && 'Uploading and processing CSV file'}
-                {activeTab === 'results' && 'Sending campaign messages'}
-                {activeTab === 'tracking' && 'Fetching tracking information'}
+                {activeTab === 'results' && `Sending ${campaignType} campaign messages`}
+                {activeTab === 'tracking' && 'Fetching email tracking information'}
+                {activeTab === 'whatsapp-tracking' && 'Fetching WhatsApp tracking information'}
               </p>
             </div>
           </div>

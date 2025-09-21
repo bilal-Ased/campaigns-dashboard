@@ -51,6 +51,32 @@ const FileUpload = ({ onFileSelect, campaignType, selectedFile }) => {
     onFileSelect(null);
   };
 
+  const getRequiredColumns = () => {
+    switch (campaignType) {
+      case 'email':
+        return 'Name, Email, Balance columns';
+      case 'sms':
+        return 'name, mobile, message columns';
+      case 'whatsapp':
+        return 'name, phone, message columns';
+      default:
+        return 'required columns based on campaign type';
+    }
+  };
+
+  const getExampleFormat = () => {
+    switch (campaignType) {
+      case 'email':
+        return 'Example: John Doe, john@example.com, 1500';
+      case 'sms':
+        return 'Example: Jane Smith, +254712345678, Your payment reminder message';
+      case 'whatsapp':
+        return 'Example: Bob Johnson, +254723456789, Hello! This is your WhatsApp reminder';
+      default:
+        return 'Check the format requirements for your campaign type';
+    }
+  };
+
   return (
     <div className="space-y-4">
       {!selectedFile ? (
@@ -70,12 +96,14 @@ const FileUpload = ({ onFileSelect, campaignType, selectedFile }) => {
           <p className="text-white text-lg mb-2">
             Drop your CSV file here or click to browse
           </p>
-          <p className="text-purple-200 text-sm">
-            {campaignType === 'email' 
-              ? 'CSV should contain: Name, Email, Balance columns' 
-              : 'CSV should contain: name, mobile, message columns'
-            }
-          </p>
+          <div className="space-y-1">
+            <p className="text-purple-200 text-sm">
+              CSV should contain: {getRequiredColumns()}
+            </p>
+            <p className="text-purple-300 text-xs">
+              {getExampleFormat()}
+            </p>
+          </div>
           <input
             ref={fileInputRef}
             type="file"
@@ -120,6 +148,34 @@ const FileUpload = ({ onFileSelect, campaignType, selectedFile }) => {
               </table>
             </div>
           )}
+
+          {/* Campaign-specific tips */}
+          <div className="mt-4 p-3 bg-white/5 rounded-xl">
+            <p className="text-purple-200 text-sm font-medium mb-1">
+              {campaignType.charAt(0).toUpperCase() + campaignType.slice(1)} Campaign Tips:
+            </p>
+            {campaignType === 'whatsapp' && (
+              <ul className="text-purple-300 text-xs space-y-1">
+                <li>• Phone numbers should include country code (e.g., +254...)</li>
+                <li>• Messages can include emojis and rich formatting</li>
+                <li>• WhatsApp Business API rate limits apply</li>
+              </ul>
+            )}
+            {campaignType === 'sms' && (
+              <ul className="text-purple-300 text-xs space-y-1">
+                <li>• Keep messages under 160 characters for single SMS</li>
+                <li>• Phone numbers should include country code</li>
+                <li>• Avoid special characters that may cause encoding issues</li>
+              </ul>
+            )}
+            {campaignType === 'email' && (
+              <ul className="text-purple-300 text-xs space-y-1">
+                <li>• Ensure email addresses are valid and properly formatted</li>
+                <li>• Balance column will be used in payment reminder templates</li>
+                <li>• HTML formatting is supported in email content</li>
+              </ul>
+            )}
+          </div>
         </div>
       )}
     </div>

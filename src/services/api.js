@@ -36,10 +36,23 @@ export const campaignService = {
     });
     return response.data;
   },
-getTrackingInfo: async () => {
-  const response = await api.get('/get-tracking-info/');
-  return response.data;
-}
+
+  sendWhatsAppCampaign: async (filePath) => {
+    const response = await api.post('/send-whatsapp-from-csv/', {
+      file_path: filePath
+    });
+    return response.data;
+  },
+
+  getTrackingInfo: async () => {
+    const response = await api.get('/get-tracking-info/');
+    return response.data;
+  },
+
+  getWhatsAppTrackingInfo: async () => {
+    const response = await api.get('/get-whatsapp-tracking-info/');
+    return response.data;
+  }
 };
 
 export default api;
