@@ -19,6 +19,7 @@ import { campaignService } from '../services/api';
 import { formatNumber, calculatePercentage } from '../utils/helpers';
 import StatsCard from './StatsCard';
 import FileUpload from './FileUpload';
+import SMSMessageComposer from './SMSMessageComposer';
 
 const CampaignsDashboard = () => {
   const [activeTab, setActiveTab] = useState('upload');
@@ -31,6 +32,11 @@ const CampaignsDashboard = () => {
   const [error, setError] = useState(null);
   const [uploadedFilePath, setUploadedFilePath] = useState(null);
   
+  // New state for SMS message composition
+  const [smsMessageTemplate, setSmsMessageTemplate] = useState('');
+  const [csvHeaders, setCsvHeaders] = useState([]);
+  const [csvPreviewData, setCsvPreviewData] = useState([]);
+  
   const [stats, setStats] = useState({
     totalSent: 0,
     successful: 0,
@@ -38,11 +44,14 @@ const CampaignsDashboard = () => {
     processing: 0
   });
 
-  // Handle file upload
+  // Handle file upload with CSV parsing
   const handleFileUpload = useCallback(async (file) => {
     if (!file) {
       setUploadedFile(null);
       setUploadedFilePath(null);
+      setCsvHeaders([]);
+      setCsvPreviewData([]);
+      setSmsMessageTemplate('');
       return;
     }
 
@@ -53,10 +62,30 @@ const CampaignsDashboard = () => {
       const result = await campaignService.uploadCSV(file);
       setUploadedFile(file);
       setUploadedFilePath(result.file_path);
+      
+      // Parse CSV for headers and preview data
+      const text = await file.text();
+      const lines = text.split('\n').filter(line => line.trim());
+      if (lines.length > 0) {
+        const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+        const previewData = lines.slice(1, 6).map(line => {
+          const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
+          const row = {};
+          headers.forEach((header, index) => {
+            row[header] = values[index] || '';
+          });
+          return row;
+        }).filter(row => Object.values(row).some(val => val)); // Filter out empty rows
+        
+        setCsvHeaders(headers);
+        setCsvPreviewData(previewData);
+      }
     } catch (error) {
       setError('Failed to upload file: ' + (error.response?.data?.error || error.message));
       setUploadedFile(null);
       setUploadedFilePath(null);
+      setCsvHeaders([]);
+      setCsvPreviewData([]);
     } finally {
       setIsLoading(false);
     }
@@ -95,10 +124,15 @@ const CampaignsDashboard = () => {
     }
   };
 
-  // Send SMS campaign
+  // Send SMS campaign with message template
   const sendSMSCampaign = async () => {
     if (!uploadedFilePath) {
       setError('Please upload a CSV file first');
+      return;
+    }
+    
+    if (campaignType === 'sms' && !smsMessageTemplate.trim()) {
+      setError('Please compose a message template for SMS campaign');
       return;
     }
     
@@ -106,7 +140,7 @@ const CampaignsDashboard = () => {
     setError(null);
     
     try {
-      const results = await campaignService.sendSMSCampaign(uploadedFilePath);
+      const results = await campaignService.sendSMSCampaign(uploadedFilePath, smsMessageTemplate);
       setCampaignResults(results);
       
       // Calculate stats
@@ -201,6 +235,13 @@ const CampaignsDashboard = () => {
     }
   }, [error]);
 
+  // Reset message template when campaign type changes
+  React.useEffect(() => {
+    if (campaignType !== 'sms') {
+      setSmsMessageTemplate('');
+    }
+  }, [campaignType]);
+
   const getCampaignFunction = () => {
     switch (campaignType) {
       case 'email':
@@ -212,6 +253,12 @@ const CampaignsDashboard = () => {
       default:
         return sendEmailCampaign;
     }
+  };
+
+  const canSendCampaign = () => {
+    if (!uploadedFile || !uploadedFilePath) return false;
+    if (campaignType === 'sms' && !smsMessageTemplate.trim()) return false;
+    return true;
   };
 
   return (
@@ -329,7 +376,7 @@ const CampaignsDashboard = () => {
                   <MessageSquare className="h-6 w-6" />
                   <div className="text-left">
                     <div className="font-medium">SMS Campaign</div>
-                    <div className="text-sm opacity-75">Send messages via SMS</div>
+                    <div className="text-sm opacity-75">Send custom messages via SMS</div>
                   </div>
                 </button>
                 <button
@@ -355,12 +402,24 @@ const CampaignsDashboard = () => {
                 selectedFile={uploadedFile}
               />
 
+              {/* SMS Message Composer */}
+              {campaignType === 'sms' && uploadedFile && csvHeaders.length > 0 && (
+                <div className="backdrop-blur-lg bg-white/10 rounded-2xl p-6 border border-white/20">
+                  <SMSMessageComposer
+                    csvHeaders={csvHeaders}
+                    csvData={csvPreviewData}
+                    messageTemplate={smsMessageTemplate}
+                    onMessageChange={setSmsMessageTemplate}
+                  />
+                </div>
+              )}
+
               {/* Send Campaign Button */}
               {uploadedFile && uploadedFilePath && (
                 <div className="flex space-x-4">
                   <button
                     onClick={getCampaignFunction()}
-                    disabled={isLoading}
+                    disabled={isLoading || !canSendCampaign()}
                     className="flex-1 bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white font-semibold py-4 px-6 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-3"
                   >
                     {isLoading ? (
@@ -401,9 +460,24 @@ const CampaignsDashboard = () => {
                   </div>
                 </div>
               )}
+
+              {/* Campaign Requirements Info */}
+              {campaignType === 'sms' && (!uploadedFile || !smsMessageTemplate.trim()) && (
+                <div className="backdrop-blur-lg bg-blue-500/20 border border-blue-500/30 rounded-2xl p-4 flex items-start space-x-3">
+                  <AlertCircle className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-blue-200 font-medium">SMS Campaign Requirements</p>
+                    <ul className="text-blue-300 text-sm mt-1 space-y-1">
+                      {!uploadedFile && <li>• Upload a CSV file with your contacts</li>}
+                      {uploadedFile && !smsMessageTemplate.trim() && <li>• Compose your message template using the fields from your CSV</li>}
+                    </ul>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
+          {/* Results Tab - same as original */}
           {activeTab === 'results' && (
             <div className="space-y-6">
               <div className="flex items-center justify-between">
@@ -502,6 +576,7 @@ const CampaignsDashboard = () => {
             </div>
           )}
 
+          {/* Keep all other tabs (tracking, whatsapp-tracking) exactly the same as original */}
           {activeTab === 'tracking' && (
             <div className="space-y-6">
               <div className="flex items-center justify-between">
